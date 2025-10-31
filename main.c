@@ -9,6 +9,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include "pico/time.h"
 
 // Pico W devices use a GPIO on the WIFI chip for the LED,
 // so when building for Pico W, CYW43_WL_GPIO_LED_PIN will be defined
@@ -280,7 +281,11 @@ int main() {
         printf("\n");
         
         // Compute DTFT
+        absolute_time_t start_time = get_absolute_time();
         float *magnitudes = calculate_dtft(signal_buffer, total_len, 128);
+        absolute_time_t end_time = get_absolute_time();
+        int64_t execution_time = absolute_time_diff_us(start_time, end_time);
+        printf("DTFT calculation took %lld milliseconds.\n", execution_time / 1000);
         
         // Plot DTFT spectrum
         if (magnitudes) {
