@@ -21,7 +21,7 @@
 #endif
 
 #define SIGNAL_GPIO 2
-#define CLOCK_GPIO 3
+#define RECEIVER_GPIO 3
 #define TX_ACTIVE_GPIO 4
 #define BIT_DELAY_MS 100
 #define PATTERN_DELAY_MS 1000
@@ -58,12 +58,12 @@ void send_bit(uint8_t bit) {
     printf("  send_bit: SIGNAL_GPIO set to %d\n", bit);
     
     // Clock pulse: high for half the bit time
-    gpio_put(CLOCK_GPIO, 1);
+    gpio_put(RECEIVER_GPIO, 1);
     pico_set_led(true);
     sleep_ms(BIT_DELAY_MS / 2);
     
     // Clock pulse: low for the other half
-    gpio_put(CLOCK_GPIO, 0);
+    gpio_put(RECEIVER_GPIO, 0);
     pico_set_led(false);
     sleep_ms(BIT_DELAY_MS / 2);
 }
@@ -143,20 +143,35 @@ float compute_dtft_magnitude(uint8_t *x, int N, float omega) {
     return sqrtf(real_part * real_part + imag_part * imag_part);
 }
 
-// Plot DTFT spectrum in terminal
+// Compute DTFT magnitudes for a range of frequencies
 // x: input signal array
 // N: length of signal
-// num_points: number of frequency points to compute (default 64)
-void plot_dtft_spectrum(uint8_t *x, int N, int num_points) {
-    printf("\n========== DTFT SPECTRUM ==========\n");
-    
-    // Compute DTFT magnitudes
-    float magnitudes[num_points];
-    float max_magnitude = 0.0f;
-    
+// num_points: number of frequency points to compute
+// Returns: array of magnitudes (caller must free)
+float* calculate_dtft(uint8_t *x, int N, int num_points) {
+    float *magnitudes = malloc(num_points * sizeof(float));
+    if (!magnitudes) {
+        printf("Error: Failed to allocate memory for DTFT magnitudes\n");
+        return NULL;
+    }
+
     for (int k = 0; k < num_points; k++) {
         float omega = (2.0f * M_PI * k) / num_points;  // 0 to 2*pi
         magnitudes[k] = compute_dtft_magnitude(x, N, omega);
+    }
+
+    return magnitudes;
+}
+
+// Plot DTFT spectrum in terminal
+// magnitudes: array of DTFT magnitudes
+// num_points: number of frequency points in the magnitudes array
+void plot_dtft_spectrum(float *magnitudes, int num_points) {
+    printf("\n========== DTFT SPECTRUM ==========\n");
+    
+    // Find max magnitude
+    float max_magnitude = 0.0f;
+    for (int k = 0; k < num_points; k++) {
         if (magnitudes[k] > max_magnitude) {
             max_magnitude = magnitudes[k];
         }
@@ -230,13 +245,13 @@ int main() {
     int rc = pico_led_init();
     hard_assert(rc == PICO_OK);
     
-    // Initialize GPIO2 for signal generation, GPIO3 for clock, GPIO4 for TX_ACTIVE
+    // Initialize GPIO2 for signal generation, GPIO3 for receiver, GPIO4 for TX_ACTIVE
     gpio_init(SIGNAL_GPIO);
     gpio_set_dir(SIGNAL_GPIO, GPIO_OUT);
     gpio_put(SIGNAL_GPIO, 0);
-    gpio_init(CLOCK_GPIO);
-    gpio_set_dir(CLOCK_GPIO, GPIO_OUT);
-    gpio_put(CLOCK_GPIO, 0);
+    gpio_init(RECEIVER_GPIO);
+    gpio_set_dir(RECEIVER_GPIO, GPIO_OUT);
+    gpio_put(RECEIVER_GPIO, 0);
     gpio_init(TX_ACTIVE_GPIO);
     gpio_set_dir(TX_ACTIVE_GPIO, GPIO_OUT);
     gpio_put(TX_ACTIVE_GPIO, 0);
@@ -264,8 +279,14 @@ int main() {
         }
         printf("\n");
         
-        // Compute and display DTFT spectrum
-        plot_dtft_spectrum(signal_buffer, total_len, 128);
+        // Compute DTFT
+        float *magnitudes = calculate_dtft(signal_buffer, total_len, 128);
+        
+        // Plot DTFT spectrum
+        if (magnitudes) {
+            plot_dtft_spectrum(magnitudes, 128);
+            free(magnitudes);
+        }
         
         // Free allocated memory
         free(bits_sent);
