@@ -12,6 +12,36 @@
 #include <stdarg.h>
 #include "pico/time.h"
 
+// Size of the sine/cosine lookup tables (must be power of 2)
+#define LUT_SIZE 256
+#define LUT_MASK (LUT_SIZE - 1)
+
+// Pre-computed sine and cosine lookup tables
+float sin_lut[LUT_SIZE];
+float cos_lut[LUT_SIZE];
+
+// Initialize lookup tables
+void init_trig_lut(void) {
+    for (int i = 0; i < LUT_SIZE; i++) {
+        float angle = (2.0f * M_PI * i) / LUT_SIZE;
+        sin_lut[i] = sinf(angle);
+        cos_lut[i] = cosf(angle);
+    }
+}
+
+// Fast lookup of sine/cosine values
+inline float fast_sin(float angle) {
+    // Normalize angle to 0-2π range and convert to lookup table index
+    int index = (int)((angle * LUT_SIZE) / (2.0f * M_PI)) & LUT_MASK;
+    return sin_lut[index];
+}
+
+inline float fast_cos(float angle) {
+    // Normalize angle to 0-2π range and convert to lookup table index
+    int index = (int)((angle * LUT_SIZE) / (2.0f * M_PI)) & LUT_MASK;
+    return cos_lut[index];
+}
+
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
 #define DEBUG 0
@@ -160,8 +190,9 @@ float compute_dtft_magnitude(uint8_t *x, int N, float omega) {
     
     for (int n = 0; n < N; n++) {
         float angle = -omega * n;
-        real_part += x[n] * cosf(angle);
-        imag_part += x[n] * sinf(angle);
+        // Use look-up table for faster trigonometric calculations
+        real_part += x[n] * fast_cos(angle);
+        imag_part += x[n] * fast_sin(angle);
     }
     
     return sqrtf(real_part * real_part + imag_part * imag_part);
@@ -310,6 +341,9 @@ void process_pattern(uint8_t *bits_sent) {
 int main() {
     // Initialize stdio only in DEBUG to avoid USB overhead in performance runs
     stdio_init_all();
+    
+    // Initialize trigonometric look-up tables
+    init_trig_lut();
 
     int rc = pico_led_init();
     hard_assert(rc == PICO_OK);
