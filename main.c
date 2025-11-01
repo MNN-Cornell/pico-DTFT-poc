@@ -39,14 +39,13 @@ static inline void perf_printf(const char *fmt, ...) {
 #endif
 
 #ifndef LED_DELAY_MS
-#define LED_DELAY_MS 250
+#define LED_DELAY_MS 10
 #endif
 
 #define SIGNAL_GPIO 2
 #define RECEIVER_GPIO 3
 #define TX_ACTIVE_GPIO 4
-#define BIT_DELAY_MS 100
-#define PATTERN_DELAY_MS 1000
+#define BIT_DELAY_MS 10    // Reduced from 100ms to 1ms for faster transmission
 
 // Perform initialisation
 int pico_led_init(void) {
@@ -337,7 +336,7 @@ int main() {
             process_pattern(bits_sent);
             free(bits_sent);
         }
-        sleep_ms(5000);  // 5 second interval
+        sleep_ms(3000);  // 3 second interval
         
         // Pattern 2: 4 bits
         printf("\nPattern 2 (4 bits):\n");
@@ -346,7 +345,7 @@ int main() {
             process_pattern(bits_sent);
             free(bits_sent);
         }
-        sleep_ms(5000);  // 5 second interval
+        sleep_ms(3000);  // 3 second interval
         
         // Pattern 3: 8 bits
         printf("\nPattern 3 (8 bits):\n");
@@ -355,7 +354,7 @@ int main() {
             process_pattern(bits_sent);
             free(bits_sent);
         }
-        sleep_ms(5000);  // 5 second interval
+        sleep_ms(3000);  // 3 second interval
         
         // Pattern 4: 16 bits
         printf("\nPattern 4 (16 bits):\n");
@@ -367,6 +366,6 @@ int main() {
         }
         
         // Wait before starting the sequence again
-        sleep_ms(5000);  // 5 second interval
+        sleep_ms(3000);  // 3 second interval
     }
 }
