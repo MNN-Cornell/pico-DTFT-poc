@@ -14,7 +14,7 @@
 
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
 // Disable printf overhead in non-DEBUG builds
@@ -262,6 +262,51 @@ void plot_dtft_spectrum(float *magnitudes, int num_points) {
 }
 #endif
 
+// Process a single pattern: compute DTFT and plot spectrum
+void process_pattern(uint8_t *bits_sent) {
+    if (!bits_sent) return;
+    
+    // Extract pattern length and show the received bits before repetition
+    int pattern_len = bits_sent[0];
+#if DEBUG
+    printf("Received pattern: ");
+    for (int i = 1; i <= pattern_len; i++) {
+        printf("%d", bits_sent[i]);
+    }
+    printf("\n");
+#endif
+
+    // Repeat the pattern 10 times for DTFT analysis
+    uint8_t *signal_buffer = repeat_pattern(bits_sent, 10);
+    
+    // Get total buffer size
+    int total_len = pattern_len * 10;
+    
+    // Print the signal buffer for verification
+    printf("Signal buffer (pattern repeated 10x): ");
+    for (int i = 0; i < total_len; i++) {
+        printf("%d", signal_buffer[i]);
+    }
+    printf("\n");
+    
+    // Compute DTFT
+    absolute_time_t start_time = get_absolute_time();
+    float *magnitudes = calculate_dtft(signal_buffer, total_len, 128);
+    absolute_time_t end_time = get_absolute_time();
+    int64_t execution_time = absolute_time_diff_us(start_time, end_time);
+    perf_printf("%d bits data: DTFT calculation took %lld milliseconds.\n", pattern_len, execution_time / 1000);
+    
+    // Plot DTFT spectrum (DEBUG only)
+    if (magnitudes) {
+#if DEBUG
+        plot_dtft_spectrum(magnitudes, 128);
+#endif
+        free(magnitudes);
+    }
+    
+    // Free signal buffer
+    free(signal_buffer);
+}
 
 int main() {
     // Initialize stdio only in DEBUG to avoid USB overhead in performance runs
@@ -282,56 +327,46 @@ int main() {
     gpio_put(TX_ACTIVE_GPIO, 0);
     
     while (true) {
-        printf("hello, world!\n"); // Now this will go to USB
+        printf("\n=== Starting new pattern sequence ===\n");
         
-        // Send data - choose one pattern to transmit
-        // uint8_t *bits_sent = send_data(0b10, 2);       // 2 bits: 10. radians/sample = 2*pi/2
-        // uint8_t *bits_sent = send_data(0b1000, 4);     // 4 bits: 1000. radians/sample = 2*pi/4
-        // uint8_t *bits_sent = send_data(0b10000000, 8); // 8 bits: 10000000. radians/sample = 2*pi/8
-        uint8_t *bits_sent = send_data(0x8000, 16);       // 16 bits: 1000000000000000. radians/sample = 2*pi/16
-        
-        // Extract pattern length and show the received bits before repetition
-        int pattern_len = bits_sent[0];
-#if DEBUG
-        printf("Received pattern: ");
-        for (int i = 1; i <= pattern_len; i++) {
-            printf("%d", bits_sent[i]);
+        // Pattern 1: 2 bits
+        printf("\nPattern 1 (2 bits):\n");
+        uint8_t *bits_sent = send_data(0b10, 2);       // 2 bits: 10. radians/sample = 2*pi/2
+        if (bits_sent) {
+            // Process pattern (DTFT calculation and plotting)
+            process_pattern(bits_sent);
+            free(bits_sent);
         }
-        printf("\n");
-#endif
-
-        // Repeat the pattern 10 times for DTFT analysis
-        uint8_t *signal_buffer = repeat_pattern(bits_sent, 10);
+        sleep_ms(5000);  // 5 second interval
         
-        // Get total buffer size
-        int total_len = pattern_len * 10;
-        
-        // Print the signal buffer for verification
-        printf("Signal buffer (pattern repeated 10x): ");
-        for (int i = 0; i < total_len; i++) {
-            printf("%d", signal_buffer[i]);
+        // Pattern 2: 4 bits
+        printf("\nPattern 2 (4 bits):\n");
+        bits_sent = send_data(0b1000, 4);     // 4 bits: 1000. radians/sample = 2*pi/4
+        if (bits_sent) {
+            process_pattern(bits_sent);
+            free(bits_sent);
         }
-        printf("\n");
+        sleep_ms(5000);  // 5 second interval
         
-        // Compute DTFT
-        absolute_time_t start_time = get_absolute_time();
-        float *magnitudes = calculate_dtft(signal_buffer, total_len, 128);
-        absolute_time_t end_time = get_absolute_time();
-        int64_t execution_time = absolute_time_diff_us(start_time, end_time);
-        perf_printf("DTFT calculation took %lld milliseconds.\n", execution_time / 1000);
+        // Pattern 3: 8 bits
+        printf("\nPattern 3 (8 bits):\n");
+        bits_sent = send_data(0b10000000, 8); // 8 bits: 10000000. radians/sample = 2*pi/8
+        if (bits_sent) {
+            process_pattern(bits_sent);
+            free(bits_sent);
+        }
+        sleep_ms(5000);  // 5 second interval
         
-        // Plot DTFT spectrum (DEBUG only)
-        if (magnitudes) {
-#if DEBUG
-            plot_dtft_spectrum(magnitudes, 128);
-#endif
-            free(magnitudes);
+        // Pattern 4: 16 bits
+        printf("\nPattern 4 (16 bits):\n");
+        bits_sent = send_data(0x8000, 16);    // 16 bits: 1000000000000000. radians/sample = 2*pi/16
+        
+        if (bits_sent) {
+            process_pattern(bits_sent);
+            free(bits_sent);
         }
         
-        // Free allocated memory
-        free(bits_sent);
-        free(signal_buffer);
-
-        sleep_ms(PATTERN_DELAY_MS);
+        // Wait before starting the sequence again
+        sleep_ms(5000);  // 5 second interval
     }
 }
