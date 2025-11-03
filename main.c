@@ -44,7 +44,7 @@ inline float fast_cos(float angle) {
 
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
-#define DEBUG 0
+#define DEBUG 1
 #endif
 
 // Disable printf overhead in non-DEBUG builds
@@ -219,7 +219,7 @@ float* calculate_dtft(uint8_t *x, int N, int num_points) {
 }
 
 #if DEBUG
-// Plot DTFT spectrum in terminal
+// Plot DTFT spectrum in terminal with adaptive scaling
 // magnitudes: array of DTFT magnitudes
 // num_points: number of frequency points in the magnitudes array
 void plot_dtft_spectrum(float *magnitudes, int num_points) {
@@ -236,15 +236,18 @@ void plot_dtft_spectrum(float *magnitudes, int num_points) {
     // Normalize for display
     if (max_magnitude == 0.0f) max_magnitude = 1.0f;
     
-    // Convert to bar heights (0-30 for display)
+    // Adaptive display height based on data
+    int max_height = 25;  // Maximum height for display
+    
+    // Convert to bar heights (0 to max_height for display)
     int bar_heights[num_points];
     for (int k = 0; k < num_points; k++) {
-        bar_heights[k] = (int)((magnitudes[k] / max_magnitude) * 30);
+        bar_heights[k] = (int)((magnitudes[k] / max_magnitude) * max_height);
     }
     
     // Plot spectrum vertically - magnitude on Y-axis, frequency on X-axis (0 to π only)
     int half_points = num_points / 2;
-    for (int height = 30; height > 0; height--) {
+    for (int height = max_height; height > 0; height--) {
         for (int k = 0; k < half_points; k++) {
             if (bar_heights[k] >= height) {
                 printf("#");
@@ -263,7 +266,6 @@ void plot_dtft_spectrum(float *magnitudes, int num_points) {
     
     // Print frequency labels at major intervals (aligned to column positions)
     // Labels at: 0, 0.25π, 0.5π, 0.75π, 1.0π (covering 0 to π)
-    // These correspond to k values: 0, 8, 16, 24, 32 (for 64 points covering 0 to π)
     char label_line[half_points + 1];
     memset(label_line, ' ', half_points);
     label_line[half_points] = '\0';
@@ -288,9 +290,66 @@ void plot_dtft_spectrum(float *magnitudes, int num_points) {
     label_line[half_points] = '\0';
     printf("%s\n", label_line);
     
+    // Print statistics
+    printf("Max magnitude: %.6f | Height: %d\n", max_magnitude, max_height);
     printf("===================================\n\n");
 }
 #endif
+
+// Compute DTFT with both magnitude and phase
+// x: input signal array
+// N: length of signal
+// num_points: number of frequency points to compute
+// Returns: array of complex values [real1, imag1, real2, imag2, ...] (caller must free)
+float* calculate_dtft_complex(uint8_t *x, int N, int num_points) {
+    float *complex_values = malloc(num_points * 2 * sizeof(float));
+    if (!complex_values) {
+        printf("Error: Failed to allocate memory for DTFT complex values\n");
+        return NULL;
+    }
+
+    for (int k = 0; k < num_points; k++) {
+        float real_part = 0.0f;
+        float imag_part = 0.0f;
+        float omega = (2.0f * M_PI * k) / num_points;
+        
+        for (int n = 0; n < N; n++) {
+            float angle = -omega * n;
+            real_part += x[n] * fast_cos(angle);
+            imag_part += x[n] * fast_sin(angle);
+        }
+        
+        complex_values[2*k] = real_part;
+        complex_values[2*k + 1] = imag_part;
+    }
+
+    return complex_values;
+}
+
+// Print DTFT complex values in MATLAB-friendly format
+void print_dtft_complex_for_matlab(float *complex_values, int num_points) {
+    printf("\n========== DTFT COMPLEX VALUES FOR MATLAB ==========\n");
+    printf("dtft_real = [\n");
+    for (int k = 0; k < num_points; k++) {
+        printf("    %.6f", complex_values[2*k]);
+        if (k < num_points - 1) {
+            printf(";");
+        }
+        printf("\n");
+    }
+    printf("];\n");
+    
+    printf("dtft_imag = [\n");
+    for (int k = 0; k < num_points; k++) {
+        printf("    %.6f", complex_values[2*k + 1]);
+        if (k < num_points - 1) {
+            printf(";");
+        }
+        printf("\n");
+    }
+    printf("];\n");
+    printf("====================================================\n\n");
+}
 
 // Process a single pattern: compute DTFT and plot spectrum
 void process_pattern(uint8_t *bits_sent) {
@@ -319,19 +378,33 @@ void process_pattern(uint8_t *bits_sent) {
     }
     printf("\n");
     
-    // Compute DTFT
+    // Compute DTFT (complex values)
     absolute_time_t start_time = get_absolute_time();
-    float *magnitudes = calculate_dtft(signal_buffer, total_len, 128);
+    float *complex_values = calculate_dtft_complex(signal_buffer, total_len, 128);
+    perf_printf("%f", complex_values); // Dummy print to avoid unused variable warning
     absolute_time_t end_time = get_absolute_time();
     int64_t execution_time = absolute_time_diff_us(start_time, end_time);
     perf_printf("%d bits data: DTFT calculation took %lld milliseconds.\n", pattern_len, execution_time / 1000);
     
-    // Plot DTFT spectrum (DEBUG only)
-    if (magnitudes) {
+    // Print complex DTFT values for MATLAB
+    if (complex_values) {
+        print_dtft_complex_for_matlab(complex_values, 128);
+        
+        // Also compute and plot magnitudes for visualization
+        float *magnitudes = malloc(128 * sizeof(float));
+        if (magnitudes) {
+            for (int k = 0; k < 128; k++) {
+                float real = complex_values[2*k];
+                float imag = complex_values[2*k + 1];
+                magnitudes[k] = sqrtf(real * real + imag * imag);
+            }
 #if DEBUG
-        plot_dtft_spectrum(magnitudes, 128);
+            plot_dtft_spectrum(magnitudes, 128);
 #endif
-        free(magnitudes);
+            free(magnitudes);
+        }
+        
+        free(complex_values);
     }
     
     // Free signal buffer
@@ -360,44 +433,16 @@ int main() {
     gpio_put(TX_ACTIVE_GPIO, 0);
     
     while (true) {
-        printf("\n=== Starting new pattern sequence ===\n");
-        
-        // Pattern 1: 2 bits
-        printf("\nPattern 1 (2 bits):\n");
-        uint8_t *bits_sent = send_data(0b10, 2);       // 2 bits: 10. radians/sample = 2*pi/2
-        if (bits_sent) {
-            // Process pattern (DTFT calculation and plotting)
-            process_pattern(bits_sent);
-            free(bits_sent);
-        }
-        sleep_ms(3000);  // 3 second interval
-        
-        // Pattern 2: 4 bits
-        printf("\nPattern 2 (4 bits):\n");
-        bits_sent = send_data(0b1000, 4);     // 4 bits: 1000. radians/sample = 2*pi/4
-        if (bits_sent) {
-            process_pattern(bits_sent);
-            free(bits_sent);
-        }
-        sleep_ms(3000);  // 3 second interval
-        
+        printf("\n=== Starting new pattern sequence ===\n");     
+
         // Pattern 3: 8 bits
         printf("\nPattern 3 (8 bits):\n");
-        bits_sent = send_data(0b10000000, 8); // 8 bits: 10000000. radians/sample = 2*pi/8
+        uint8_t *bits_sent = send_data(0b11100100, 8); // 8 bits: impulse (single 1). radians/sample = 2*pi/8
         if (bits_sent) {
             process_pattern(bits_sent);
             free(bits_sent);
         }
         sleep_ms(3000);  // 3 second interval
-        
-        // Pattern 4: 16 bits
-        printf("\nPattern 4 (16 bits):\n");
-        bits_sent = send_data(0x8000, 16);    // 16 bits: 1000000000000000. radians/sample = 2*pi/16
-        
-        if (bits_sent) {
-            process_pattern(bits_sent);
-            free(bits_sent);
-        }
         
         // Wait before starting the sequence again
         sleep_ms(3000);  // 3 second interval
