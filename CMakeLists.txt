@@ -25,6 +25,9 @@ endif()
 # ====================================================================================
 set(PICO_BOARD pico2 CACHE STRING "Board type")
 
+# Force ARM Cortex-M33 architecture (not RISC-V)
+set(PICO_PLATFORM rp2350-arm-s CACHE STRING "Pico platform")
+
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
@@ -40,11 +43,23 @@ add_executable(poc
     )
 
 # pull in common dependencies
-target_link_libraries(poc pico_stdlib)
+target_link_libraries(poc pico_stdlib pico_multicore)
 
 if (PICO_CYW43_SUPPORTED)
     target_link_libraries(poc pico_cyw43_arch_none)
 endif()
+
+# Enable aggressive optimizations for ARM Cortex-M33 (RP2350)
+# Note: Pico SDK handles FPU configuration automatically for ARM
+target_compile_options(poc PRIVATE
+    -O3                          # Maximum optimization
+    -ffast-math                  # Aggressive math optimizations (enables FPU optimizations)
+    -funroll-loops               # Unroll loops for speed
+    -finline-functions           # Aggressive inlining
+    -fno-math-errno              # Don't set errno for math functions
+    -fno-trapping-math           # No FP exceptions
+    -ftree-vectorize             # Enable auto-vectorization
+)
 
 # create map/bin/hex file etc.
 pico_add_extra_outputs(poc)
