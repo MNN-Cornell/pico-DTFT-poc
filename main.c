@@ -15,6 +15,7 @@
 // Size of the sine/cosine lookup tables (must be power of 2)
 #define LUT_SIZE 256
 #define LUT_MASK (LUT_SIZE - 1)
+#define LUT_SCALE (LUT_SIZE / (2.0f * M_PI))  // Precomputed scaling factor
 
 // Pre-computed sine and cosine lookup tables
 float sin_lut[LUT_SIZE];
@@ -32,13 +33,13 @@ void init_trig_lut(void) {
 // Fast lookup of sine/cosine values
 inline float fast_sin(float angle) {
     // Normalize angle to 0-2π range and convert to lookup table index
-    int index = (int)((angle * LUT_SIZE) / (2.0f * M_PI)) & LUT_MASK;
+    int index = (int)(angle * LUT_SCALE) & LUT_MASK;
     return sin_lut[index];
 }
 
 inline float fast_cos(float angle) {
     // Normalize angle to 0-2π range and convert to lookup table index
-    int index = (int)((angle * LUT_SIZE) / (2.0f * M_PI)) & LUT_MASK;
+    int index = (int)(angle * LUT_SCALE) & LUT_MASK;
     return cos_lut[index];
 }
 
@@ -187,12 +188,14 @@ uint8_t* repeat_pattern(uint8_t *pattern, int repetitions) {
 float compute_dtft_magnitude(uint8_t *x, int N, float omega) {
     float real_part = 0.0f;
     float imag_part = 0.0f;
+    float angle = 0.0f;
+    float neg_omega = -omega;
     
     for (int n = 0; n < N; n++) {
-        float angle = -omega * n;
         // Use look-up table for faster trigonometric calculations
         real_part += x[n] * fast_cos(angle);
         imag_part += x[n] * fast_sin(angle);
+        angle += neg_omega;  // Increment angle instead of computing -omega * n
     }
     
     return sqrtf(real_part * real_part + imag_part * imag_part);
@@ -312,11 +315,13 @@ float* calculate_dtft_complex(uint8_t *x, int N, int num_points) {
         float real_part = 0.0f;
         float imag_part = 0.0f;
         float omega = (2.0f * M_PI * k) / num_points;
+        float angle = 0.0f;
+        float neg_omega = -omega;
         
         for (int n = 0; n < N; n++) {
-            float angle = -omega * n;
             real_part += x[n] * fast_cos(angle);
             imag_part += x[n] * fast_sin(angle);
+            angle += neg_omega;  // Increment angle instead of computing -omega * n
         }
         
         complex_values[2*k] = real_part;
@@ -437,7 +442,7 @@ int main() {
 
         // Pattern 3: 8 bits
         printf("\nPattern 3 (8 bits):\n");
-        uint8_t *bits_sent = send_data(0b11100100, 8); // 8 bits: impulse (single 1). radians/sample = 2*pi/8
+        uint8_t *bits_sent = send_data(0b01100100, 8); // 8 bits: impulse (single 1). radians/sample = 2*pi/8
         if (bits_sent) {
             process_pattern(bits_sent);
             free(bits_sent);
