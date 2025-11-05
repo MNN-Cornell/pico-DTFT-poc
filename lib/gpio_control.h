@@ -8,7 +8,7 @@
 #define RECEIVER_GPIO 3
 #define CLOCK_GPIO 4
 #define TX_ACTIVE_GPIO 5
-#define BIT_DELAY_MS 10
+#define BIT_DELAY_MS 1
 
 /**
  * Initialize LED GPIO

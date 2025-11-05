@@ -34,7 +34,7 @@ static inline uint32_t get_cycle_count(void) {
 
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
-#define DEBUG 0
+#define DEBUG 1
 #endif
 
 // Disable printf overhead in non-DEBUG builds
@@ -276,4 +276,62 @@ void process_pattern(uint8_t *bits_sent) {
     
     // Free signal buffer
     free(signal_buffer);
+}
+
+uint8_t process_pattern_return_value(uint8_t *bits_sent) {
+    if (!bits_sent) return 0;
+    
+    // Extract pattern length
+    int pattern_len = bits_sent[0];
+
+    // Repeat the pattern 10 times for DTFT analysis
+    uint8_t *signal_buffer = repeat_pattern(bits_sent, 10);
+    
+    // Get total buffer size
+    int total_len = pattern_len * 10;
+    
+    // Compute DTFT with 41 frequency points from 0 to π
+    float *complex_values = malloc(41 * 2 * sizeof(float));
+    if (!complex_values) {
+        free(signal_buffer);
+        return 0;
+    }
+    
+    // Compute DTFT for frequencies 0 to π ONLY (41 points with spacing π/40)
+    for (int k = 0; k < 41; k++) {
+        float omega = (M_PI * k) / 40.0f;
+        float real_part = 0.0f;
+        float imag_part = 0.0f;
+        
+        for (int n = 0; n < total_len; n++) {
+            float angle = -omega * n;
+            real_part += signal_buffer[n] * cosf(angle);
+            imag_part += signal_buffer[n] * sinf(angle);
+        }
+        
+        complex_values[2*k] = real_part;
+        complex_values[2*k + 1] = imag_part;
+    }
+    
+    // Compute squared magnitudes from complex values
+    float *magnitudes = malloc(41 * sizeof(float));
+    uint8_t reconstructed_value = 0;
+    
+    if (magnitudes) {
+        for (int k = 0; k < 41; k++) {
+            float real = complex_values[2*k];
+            float imag = complex_values[2*k + 1];
+            magnitudes[k] = real * real + imag * imag;  // Squared magnitude
+        }
+        
+        // Reconstruct pixel value using Euclidean distance
+        reconstructed_value = reconstruct_pixel_value(magnitudes, 41);
+        
+        free(magnitudes);
+    }
+    
+    free(complex_values);
+    free(signal_buffer);
+    
+    return reconstructed_value;
 }

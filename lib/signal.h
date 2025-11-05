@@ -18,6 +18,13 @@ uint8_t* repeat_pattern(uint8_t *pattern, int repetitions);
 void process_pattern(uint8_t *bits_sent);
 
 /**
+ * Process a single pattern and return reconstructed pixel value
+ * @param bits_sent Bit pattern array (first element is length)
+ * @return Reconstructed pixel value (0-255)
+ */
+uint8_t process_pattern_return_value(uint8_t *bits_sent);
+
+/**
  * Initialize the ARM DWT cycle counter for performance measurement
  * Call this once at startup before measuring cycles
  */
