@@ -40,7 +40,15 @@ pico_sdk_init()
 
 add_executable(poc
     main.c
+    lib/lut.c
+    lib/dtft.c
+    lib/gpio_control.c
+    lib/signal.c
+    lib/output.c
     )
+
+# Add include directories for lib modules
+target_include_directories(poc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # pull in common dependencies
 target_link_libraries(poc pico_stdlib pico_multicore)
