@@ -10,7 +10,7 @@
 
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
 // Disable printf overhead in non-DEBUG builds
@@ -77,16 +77,16 @@ uint8_t reconstruct_pixel_value(const float *computed_magnitudes, int num_freque
         }
     }
     
-    printf("\n=== Pixel Value Reconstruction (Euclidean Distance) ===\n");
-    printf("Best match: 0x%02X (0b", best_match);
+    perf_printf("\n=== Pixel Value Reconstruction (Euclidean Distance) ===\n");
+    perf_printf("Best match: 0x%02X (0b", best_match);
     for (int i = 7; i >= 0; i--) {
-        printf("%d", (best_match >> i) & 1);
+        perf_printf("%d", (best_match >> i) & 1);
     }
-    printf(", decimal: %d)\n", best_match);
-    printf("Minimum distance: %.6f\n", min_distance);
+    perf_printf(", decimal: %d)\n", best_match);
+    perf_printf("Minimum distance: %.6f\n", min_distance);
     
     // Show top 5 matches for debugging
-    printf("\nTop 5 matches:\n");
+    perf_printf("\nTop 5 matches:\n");
     typedef struct {
         uint8_t value;
         float distance;
@@ -114,13 +114,13 @@ uint8_t reconstruct_pixel_value(const float *computed_magnitudes, int num_freque
     }
     
     for (int i = 0; i < 5; i++) {
-        printf("  %d. 0x%02X (0b", i + 1, matches[i].value);
+        perf_printf("  %d. 0x%02X (0b", i + 1, matches[i].value);
         for (int b = 7; b >= 0; b--) {
-            printf("%d", (matches[i].value >> b) & 1);
+            perf_printf("%d", (matches[i].value >> b) & 1);
         }
-        printf(", decimal: %3d) - distance: %.6f\n", matches[i].value, matches[i].distance);
+        perf_printf(", decimal: %3d) - distance: %.6f\n", matches[i].value, matches[i].distance);
     }
-    printf("===================================================\n\n");
+    perf_printf("===================================================\n\n");
     
     return best_match;
 }
@@ -198,7 +198,9 @@ void process_pattern(uint8_t *bits_sent) {
     
     // Print complex DTFT values for MATLAB
     if (complex_values) {
+#if DEBUG
         print_dtft_complex_for_matlab(complex_values, 41);
+#endif
         
         // Compute magnitudes from complex values
         float *magnitudes = malloc(41 * sizeof(float));
