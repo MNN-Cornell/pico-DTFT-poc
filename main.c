@@ -46,6 +46,9 @@ int main() {
     // Initialize stdio only in DEBUG to avoid USB overhead in performance runs
     stdio_init_all();
     
+    // Initialize cycle counter for performance measurement
+    init_cycle_counter();
+    
     // Initialize trigonometric look-up tables
     init_trig_lut();
     

@@ -7,6 +7,30 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdarg.h>
+#include "pico/stdlib.h"
+
+// ARM Cortex-M33 DWT (Data Watchpoint and Trace) cycle counter
+// Provides accurate CPU cycle counting for performance measurement
+#define DWT_CTRL    (*(volatile uint32_t *)0xE0001000)
+#define DWT_CYCCNT  (*(volatile uint32_t *)0xE0001004)
+#define DEM_CR      (*(volatile uint32_t *)0xE000EDFC)
+
+/**
+ * Initialize the DWT cycle counter
+ * Call this once at startup before measuring cycles
+ */
+void init_cycle_counter(void) {
+    DEM_CR |= 0x01000000;  // Enable DWT
+    DWT_CTRL |= 0x00000001;  // Enable cycle counter
+}
+
+/**
+ * Get current cycle count from DWT
+ * @return Current CPU cycle count
+ */
+static inline uint32_t get_cycle_count(void) {
+    return DWT_CYCCNT;
+}
 
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
@@ -170,6 +194,7 @@ void process_pattern(uint8_t *bits_sent) {
     // Note: For real-valued signals, DTFT is symmetric around π (conjugate symmetry)
     // Therefore we only need to compute 0 to π; the π to 2π range would be redundant
     absolute_time_t start_time = get_absolute_time();
+    uint32_t start_cycles = get_cycle_count();
     
     float *complex_values = malloc(41 * 2 * sizeof(float));
     if (!complex_values) {
@@ -195,8 +220,10 @@ void process_pattern(uint8_t *bits_sent) {
     }
     
     absolute_time_t end_time = get_absolute_time();
+    uint32_t end_cycles = get_cycle_count();
     int64_t execution_time = absolute_time_diff_us(start_time, end_time);
-    perf_printf("%d bits data: DTFT calculation took %lld microseconds (%.2f ms).\n", pattern_len, execution_time, execution_time / 1000.0f);
+    uint32_t total_cycles = end_cycles - start_cycles;
+    perf_printf("%d bits data: DTFT calculation took %lld microseconds (%.2f ms) | %u cycles\n", pattern_len, execution_time, execution_time / 1000.0f, total_cycles);
     
     // Print complex DTFT values for MATLAB
     if (complex_values) {
@@ -227,7 +254,16 @@ void process_pattern(uint8_t *bits_sent) {
             }
             
             // Reconstruct pixel value using Euclidean distance
+            absolute_time_t recon_start_time = get_absolute_time();
+            uint32_t recon_start_cycles = get_cycle_count();
+            
             uint8_t reconstructed_value = reconstruct_pixel_value(magnitudes, 41);
+            
+            absolute_time_t recon_end_time = get_absolute_time();
+            uint32_t recon_end_cycles = get_cycle_count();
+            int64_t recon_execution_time = absolute_time_diff_us(recon_start_time, recon_end_time);
+            uint32_t recon_total_cycles = recon_end_cycles - recon_start_cycles;
+            perf_printf("Pixel value reconstruction took %lld microseconds (%.2f ms) | %u cycles\n", recon_execution_time, recon_execution_time / 1000.0f, recon_total_cycles);
             
 #if DEBUG
             plot_dtft_spectrum(magnitudes, 41);

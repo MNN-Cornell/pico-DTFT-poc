@@ -17,4 +17,10 @@ uint8_t* repeat_pattern(uint8_t *pattern, int repetitions);
  */
 void process_pattern(uint8_t *bits_sent);
 
+/**
+ * Initialize the ARM DWT cycle counter for performance measurement
+ * Call this once at startup before measuring cycles
+ */
+void init_cycle_counter(void);
+
 #endif // SIGNAL_H
