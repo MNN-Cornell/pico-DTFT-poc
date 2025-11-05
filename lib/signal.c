@@ -34,20 +34,14 @@ static inline uint32_t get_cycle_count(void) {
 
 // DEBUG control: set to 1 for verbose logging/plotting, 0 for performance runs
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
 // Disable printf overhead in non-DEBUG builds
 #if !DEBUG
 #undef printf
 #define printf(...) ((void)0)
-
-static inline void perf_printf(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-}
+#define perf_printf(...) ((void)0)
 #else
 #define perf_printf printf
 #endif
@@ -184,11 +178,13 @@ void process_pattern(uint8_t *bits_sent) {
     int total_len = pattern_len * 10;
     
     // Print the signal buffer for verification
+#if DEBUG
     printf("Signal buffer (pattern repeated 10x): ");
     for (int i = 0; i < total_len; i++) {
         printf("%d", signal_buffer[i]);
     }
     printf("\n");
+#endif
     
     // Compute DTFT with 41 frequency points from 0 to π to match lookup table
     // Note: For real-valued signals, DTFT is symmetric around π (conjugate symmetry)
@@ -242,6 +238,7 @@ void process_pattern(uint8_t *bits_sent) {
             }
             
             // Print first few magnitudes for debugging
+#if DEBUG
             printf("\nComputed spectrum (first 10 magnitudes):\n");
             for (int i = 0; i < 10 && i < 41; i++) {
                 printf("  freq[%d]: %.6f\n", i, magnitudes[i]);
@@ -252,6 +249,7 @@ void process_pattern(uint8_t *bits_sent) {
             for (int i = 0; i < 10; i++) {
                 printf("  freq[%d]: %.6f\n", i, dtft_lookup_n10[0x4C][i].magnitude);
             }
+#endif
             
             // Reconstruct pixel value using Euclidean distance
             absolute_time_t recon_start_time = get_absolute_time();
@@ -334,4 +332,68 @@ uint8_t process_pattern_return_value(uint8_t *bits_sent) {
     free(signal_buffer);
     
     return reconstructed_value;
+}
+
+void process_pattern_output_spectrum(uint8_t *bits_sent, int pixel_idx, int x, int y) {
+    if (!bits_sent) return;
+    
+    // Print compact pixel header
+    printf("[Pixel %d] Position: (%d, %d)\n", pixel_idx, x, y);
+    
+    // Extract pattern length
+    int pattern_len = bits_sent[0];
+
+    // Repeat the pattern 10 times for DTFT analysis
+    uint8_t *signal_buffer = repeat_pattern(bits_sent, 10);
+    
+    // Get total buffer size
+    int total_len = pattern_len * 10;
+    
+    // Compute DTFT with 41 frequency points from 0 to π
+    float *complex_values = malloc(41 * 2 * sizeof(float));
+    if (!complex_values) {
+        free(signal_buffer);
+        return;
+    }
+    
+    // Compute DTFT for frequencies 0 to π ONLY (41 points with spacing π/40)
+    for (int k = 0; k < 41; k++) {
+        float omega = (M_PI * k) / 40.0f;
+        float real_part = 0.0f;
+        float imag_part = 0.0f;
+        
+        for (int n = 0; n < total_len; n++) {
+            float angle = -omega * n;
+            real_part += signal_buffer[n] * cosf(angle);
+            imag_part += signal_buffer[n] * sinf(angle);
+        }
+        
+        complex_values[2*k] = real_part;
+        complex_values[2*k + 1] = imag_part;
+    }
+    
+    // Compute squared magnitudes from complex values
+    float *magnitudes = malloc(41 * sizeof(float));
+    
+    if (magnitudes) {
+        for (int k = 0; k < 41; k++) {
+            float real = complex_values[2*k];
+            float imag = complex_values[2*k + 1];
+            magnitudes[k] = sqrtf(real * real + imag * imag);  // Actual magnitude (not squared)
+        }
+        
+        // Output spectrum in compact format for PC reconstruction
+        printf("DTFT_SPECTRUM_START\n");
+        // Print all values on one line for speed (reduced precision)
+        for (int i = 0; i < 41; i++) {
+            printf("%.6f", magnitudes[i]);  // Reduced from 8 to 6 digits
+            if (i < 40) printf(" ");
+        }
+        printf("\nDTFT_SPECTRUM_END\n");
+        
+        free(magnitudes);
+    }
+    
+    free(complex_values);
+    free(signal_buffer);
 }

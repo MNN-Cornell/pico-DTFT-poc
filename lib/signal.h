@@ -25,6 +25,15 @@ void process_pattern(uint8_t *bits_sent);
 uint8_t process_pattern_return_value(uint8_t *bits_sent);
 
 /**
+ * Process pattern and output DTFT magnitude spectrum (for PC-side reconstruction)
+ * @param bits_sent Array where first element is length, rest are bit values
+ * @param pixel_idx Pixel index in image
+ * @param x X position in image
+ * @param y Y position in image
+ */
+void process_pattern_output_spectrum(uint8_t *bits_sent, int pixel_idx, int x, int y);
+
+/**
  * Initialize the ARM DWT cycle counter for performance measurement
  * Call this once at startup before measuring cycles
  */

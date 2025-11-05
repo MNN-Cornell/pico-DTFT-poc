@@ -19,10 +19,27 @@
 
 // Configuration: Number of pixels to transmit (set to IMAGE_SIZE for full image)
 // Start with a smaller number for testing (e.g., 100-1000 pixels)
-#define PIXELS_TO_TRANSMIT 2000  // Adjust this value
+#define PIXELS_TO_TRANSMIT 8100  // Adjust this value
 
-// Array to store reconstructed image pixels
+// Reconstruction mode:
+// 0 = Reconstruct on Pico (slower)
+// 1 = Output spectrum for PC-side reconstruction (faster)
+#define PC_RECONSTRUCTION 0
+
+// Verbose output (0 = minimal, 1 = full details)
+#define VERBOSE_OUTPUT 0
+
+// Sampling rate divisor at receiver:
+// 1 = Full rate (sample all 8 bits)
+// 2 = Half rate (sample every 2nd bit = 4 bits)
+// 4 = Quarter rate (sample every 4th bit = 2 bits)
+// 8 = Eighth rate (sample every 8th bit = 1 bit)
+#define SAMPLING_RATE_DIVISOR 8
+
+// Array to store reconstructed image pixels (only used if PC_RECONSTRUCTION = 0)
+#if !PC_RECONSTRUCTION
 static uint8_t reconstructed_image[PIXELS_TO_TRANSMIT];
+#endif
 
 /**
  * Process and reconstruct a single pixel value
@@ -31,7 +48,7 @@ static uint8_t reconstructed_image[PIXELS_TO_TRANSMIT];
  */
 uint8_t process_pixel(uint8_t pixel_value) {
     // Transmit on GPIO2, clock on GPIO4, sample received bits on GPIO3
-    uint8_t *bits_recv = send_receive_data(pixel_value, 8);
+    uint8_t *bits_recv = send_receive_data(pixel_value, 8, SAMPLING_RATE_DIVISOR);
     uint8_t reconstructed = 0;
     
     if (bits_recv) {
@@ -48,9 +65,10 @@ uint8_t process_pixel(uint8_t pixel_value) {
  * Sends pixels one by one and reconstructs the image
  */
 void transmit_reconstruct_image(void) {
-    printf("\n========== IMAGE TRANSMISSION ==========\n");
+    printf("\n========== IMAGE PROCESSING ==========\n");
     printf("Image size: %dx%d = %d pixels\n", IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_SIZE);
-    printf("Transmitting: %d pixels\n", PIXELS_TO_TRANSMIT);
+    printf("Processing: %d pixels\n", PIXELS_TO_TRANSMIT);
+    printf("Mode: %s\n", PC_RECONSTRUCTION ? "PC reconstruction" : "Pico reconstruction");
     printf("========================================\n\n");
     
     absolute_time_t start_time = get_absolute_time();
@@ -63,29 +81,45 @@ void transmit_reconstruct_image(void) {
         
         uint8_t original = image_data[i];
         
-        // Print what we're sending
+#if VERBOSE_OUTPUT
+        // Print pixel info (verbose mode only)
         printf("\n[Pixel %d] Position: (%d, %d)\n", i, x, y);
-        printf("  SENDING: 0x%02X (0b", original);
+        printf("  VALUE: 0x%02X (0b", original);
         for (int b = 7; b >= 0; b--) {
             printf("%d", (original >> b) & 1);
         }
         printf(", decimal: %d)\n", original);
+#endif
         
-        // Transmit and reconstruct
-        uint8_t reconstructed = process_pixel(original);
-        reconstructed_image[i] = reconstructed;
+        // Transmit and get spectrum or reconstruct
+        uint8_t *bits_recv = send_receive_data(original, 8, SAMPLING_RATE_DIVISOR);
         
-        // Print reconstruction result
-        printf("  RECONSTRUCTED: 0x%02X (0b", reconstructed);
-        for (int b = 7; b >= 0; b--) {
-            printf("%d", (reconstructed >> b) & 1);
+        if (bits_recv) {
+#if PC_RECONSTRUCTION
+            // Output DTFT spectrum for PC-side reconstruction
+            process_pattern_output_spectrum(bits_recv, i, x, y);
+#else
+            // Reconstruct on Pico
+            uint8_t reconstructed = process_pattern_return_value(bits_recv);
+            reconstructed_image[i] = reconstructed;
+            
+#if VERBOSE_OUTPUT
+            // Print reconstruction result
+            printf("  RECONSTRUCTED: 0x%02X (0b", reconstructed);
+            for (int b = 7; b >= 0; b--) {
+                printf("%d", (reconstructed >> b) & 1);
+            }
+            printf(", decimal: %d) %s\n", reconstructed,
+                   (original == reconstructed) ? "✓ MATCH" : "✗ MISMATCH");
+#endif
+#endif
+            free(bits_recv);
         }
-        printf(", decimal: %d) %s\n", reconstructed,
-               (original == reconstructed) ? "✓ MATCH" : "✗ MISMATCH");
         
-        // Progress update every 10 pixels
-        if ((i + 1) % 10 == 0) {
-            printf("\n>>> Progress: %d/%d pixels (%.1f%%) <<<\n", 
+        // Progress update every 10%
+        int progress_interval = PIXELS_TO_TRANSMIT / 10;
+        if (progress_interval > 0 && (i + 1) % progress_interval == 0) {
+            printf(">>> Progress: %d/%d pixels (%.0f%%) <<<\n", 
                    i + 1, PIXELS_TO_TRANSMIT, 
                    (float)(i + 1) * 100.0f / PIXELS_TO_TRANSMIT);
         }
@@ -94,7 +128,17 @@ void transmit_reconstruct_image(void) {
     absolute_time_t end_time = get_absolute_time();
     int64_t total_time = absolute_time_diff_us(start_time, end_time);
     
-    // Calculate accuracy
+    printf("\n========== PROCESSING COMPLETE ==========\n");
+    printf("Pixels processed: %d\n", PIXELS_TO_TRANSMIT);
+    printf("Total time: %.2f seconds\n", total_time / 1000000.0f);
+    printf("Average time per pixel: %.2f ms\n", 
+           total_time / (float)PIXELS_TO_TRANSMIT / 1000.0f);
+    
+#if PC_RECONSTRUCTION
+    printf("\nDTFT spectrums output for PC-side reconstruction.\n");
+    printf("Run: python3 reconstruct_on_pc.py pico_output.txt\n");
+#else
+    // Calculate accuracy (only available when reconstructing on Pico)
     int correct = 0;
     int total_error = 0;
     for (int i = 0; i < PIXELS_TO_TRANSMIT; i++) {
@@ -105,22 +149,14 @@ void transmit_reconstruct_image(void) {
         }
     }
     
-    printf("\n========== RECONSTRUCTION RESULTS ==========\n");
-    printf("Pixels transmitted: %d\n", PIXELS_TO_TRANSMIT);
     printf("Correct reconstructions: %d/%d (%.2f%%)\n", 
            correct, PIXELS_TO_TRANSMIT, 
            (float)correct * 100.0f / PIXELS_TO_TRANSMIT);
     printf("Average error per incorrect pixel: %.2f\n", 
            (PIXELS_TO_TRANSMIT - correct) > 0 ? 
            (float)total_error / (PIXELS_TO_TRANSMIT - correct) : 0.0f);
-    printf("Total time: %.2f seconds\n", total_time / 1000000.0f);
-    printf("Average time per pixel: %.2f ms\n", 
-           total_time / (float)PIXELS_TO_TRANSMIT / 1000.0f);
-    printf("Estimated time for full image: %.2f hours\n",
-           (total_time / (float)PIXELS_TO_TRANSMIT * IMAGE_SIZE) / 3600000000.0f);
-    printf("============================================\n\n");
     
-    // Output reconstructed image data in machine-readable format
+    // ALWAYS output reconstructed image data (regardless of VERBOSE_OUTPUT)
     printf("\n========== RECONSTRUCTED IMAGE DATA ==========\n");
     printf("IMAGE_DATA_START\n");
     printf("WIDTH=%d\n", IMAGE_WIDTH);
@@ -128,7 +164,7 @@ void transmit_reconstruct_image(void) {
     printf("PIXELS=%d\n", PIXELS_TO_TRANSMIT);
     printf("DATA_HEX\n");
     
-    // Print as hex values, 16 per line for readability
+    // Print as hex values, 16 per line for easy copy-paste
     for (int i = 0; i < PIXELS_TO_TRANSMIT; i++) {
         printf("%02X", reconstructed_image[i]);
         if ((i + 1) % 16 == 0) {
@@ -142,6 +178,7 @@ void transmit_reconstruct_image(void) {
     }
     
     printf("IMAGE_DATA_END\n");
+#endif
     printf("==============================================\n\n");
 }
 
@@ -158,7 +195,7 @@ void test_pattern(uint8_t pattern) {
     printf(", decimal: %d)\n", pattern);
     
     // Transmit on GPIO2, clock on GPIO4, sample received bits on GPIO3
-    uint8_t *bits_recv = send_receive_data(pattern, 8);
+    uint8_t *bits_recv = send_receive_data(pattern, 8, SAMPLING_RATE_DIVISOR);
     if (bits_recv) {
         printf("Received bits: ");
         for (int i = 1; i <= bits_recv[0]; i++) {

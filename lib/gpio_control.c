@@ -99,9 +99,14 @@ uint8_t* send_data(uint16_t data, uint8_t num_bits) {
     return bits_sent;
 }
 
-uint8_t* send_receive_data(uint16_t data, uint8_t num_bits) {
+uint8_t* send_receive_data(uint16_t data, uint8_t num_bits, uint8_t sample_divisor) {
     if (num_bits < 1 || num_bits > 16) {
         printf("Error: num_bits must be between 1 and 16\n");
+        return NULL;
+    }
+    
+    if (sample_divisor < 1) {
+        printf("Error: sample_divisor must be at least 1\n");
         return NULL;
     }
 
@@ -116,18 +121,20 @@ uint8_t* send_receive_data(uint16_t data, uint8_t num_bits) {
         printf("%d", (data >> i) & 1);
     }
     printf("\n");
+    printf("Sampling rate: 1/%d (sampling every %d bits)\n", sample_divisor, sample_divisor);
 #endif
 
     // Ensure known idle states
     gpio_put(SIGNAL_GPIO, 0);
     gpio_put(CLOCK_GPIO, 0);
-    sleep_ms(1);
+    sleep_us(100);  // Reduced from 1ms to 100us
 
     // Transmission start
     gpio_put(TX_ACTIVE_GPIO, 1);
 
     for (int i = num_bits - 1; i >= 0; i--) {
         uint8_t tx_bit = (data >> i) & 1;
+        int bit_position = num_bits - 1 - i;  // 0-indexed position from MSB
 
         // Drive data bit stable before clock edge
         gpio_put(SIGNAL_GPIO, tx_bit);
@@ -139,8 +146,15 @@ uint8_t* send_receive_data(uint16_t data, uint8_t num_bits) {
         // Allow setup time before sampling
         sleep_ms(BIT_DELAY_MS / 4);
 
-        // Sample receiver on GPIO3
-        uint8_t rx_bit = gpio_get(RECEIVER_GPIO) & 1;
+        // Sample receiver on GPIO3 - only on positions divisible by sample_divisor
+        uint8_t rx_bit;
+        if (bit_position % sample_divisor == 0) {
+            // Sample this bit
+            rx_bit = gpio_get(RECEIVER_GPIO) & 1;
+        } else {
+            // Don't sample - set to 0 (undersampled position)
+            rx_bit = 0;
+        }
         bits_recv[num_bits - i] = rx_bit;
 
         // Hold clock high for remaining half-bit
@@ -156,7 +170,7 @@ uint8_t* send_receive_data(uint16_t data, uint8_t num_bits) {
 
     // Reset lines
     gpio_put(SIGNAL_GPIO, 0);
-    sleep_ms(10);
+    sleep_us(100);  // Reduced from 10ms to 100us - HUGE speedup!
 
     // Transmission end
     gpio_put(TX_ACTIVE_GPIO, 0);

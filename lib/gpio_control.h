@@ -45,8 +45,9 @@ uint8_t* send_data(uint16_t data, uint8_t num_bits);
  * Send data on GPIO2 while sampling receiver on GPIO3 using clock on GPIO4
  * @param data The value to send
  * @param num_bits Number of bits to send (1-16)
+ * @param sample_divisor Sampling rate divisor (1=full rate, 2=half rate, 4=quarter rate, etc.)
  * @return Array of bits received (caller must free). First element is num_bits, rest are the bits.
  */
-uint8_t* send_receive_data(uint16_t data, uint8_t num_bits);
+uint8_t* send_receive_data(uint16_t data, uint8_t num_bits, uint8_t sample_divisor);
 
 #endif // GPIO_CONTROL_H
