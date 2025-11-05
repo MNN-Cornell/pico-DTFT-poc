@@ -29,11 +29,12 @@ static inline void perf_printf(const char *fmt, ...) {
 #endif
 
 /**
- * Calculate Euclidean distance between two magnitude spectrums
+ * Calculate squared Euclidean distance between two magnitude spectrums
+ * (sqrt is omitted since we only need to compare distances, not compute actual values)
  * @param spectrum1 First spectrum (computed DTFT magnitudes)
  * @param spectrum2 Second spectrum (lookup table magnitudes)
  * @param num_points Number of frequency points
- * @return Euclidean distance
+ * @return Squared Euclidean distance
  */
 float calculate_euclidean_distance(const float *spectrum1, const float *spectrum2, int num_points) {
     float sum = 0.0f;
@@ -41,7 +42,7 @@ float calculate_euclidean_distance(const float *spectrum1, const float *spectrum
         float diff = spectrum1[i] - spectrum2[i];
         sum += diff * diff;
     }
-    return sqrtf(sum);
+    return sum;  // Return squared distance (sqrt is unnecessary for comparisons)
 }
 
 /**
@@ -169,6 +170,7 @@ void process_pattern(uint8_t *bits_sent) {
     // Note: For real-valued signals, DTFT is symmetric around π (conjugate symmetry)
     // Therefore we only need to compute 0 to π; the π to 2π range would be redundant
     absolute_time_t start_time = get_absolute_time();
+    
     float *complex_values = malloc(41 * 2 * sizeof(float));
     if (!complex_values) {
         free(signal_buffer);
@@ -194,7 +196,7 @@ void process_pattern(uint8_t *bits_sent) {
     
     absolute_time_t end_time = get_absolute_time();
     int64_t execution_time = absolute_time_diff_us(start_time, end_time);
-    perf_printf("%d bits data: DTFT calculation took %lld milliseconds.\n", pattern_len, execution_time / 1000);
+    perf_printf("%d bits data: DTFT calculation took %lld microseconds (%.2f ms).\n", pattern_len, execution_time, execution_time / 1000.0f);
     
     // Print complex DTFT values for MATLAB
     if (complex_values) {
@@ -202,13 +204,14 @@ void process_pattern(uint8_t *bits_sent) {
         print_dtft_complex_for_matlab(complex_values, 41);
 #endif
         
-        // Compute magnitudes from complex values
+        // Compute squared magnitudes from complex values
+        // (no sqrt needed - lookup table now stores squared magnitudes)
         float *magnitudes = malloc(41 * sizeof(float));
         if (magnitudes) {
             for (int k = 0; k < 41; k++) {
                 float real = complex_values[2*k];
                 float imag = complex_values[2*k + 1];
-                magnitudes[k] = sqrtf(real * real + imag * imag);
+                magnitudes[k] = real * real + imag * imag;  // Squared magnitude
             }
             
             // Print first few magnitudes for debugging

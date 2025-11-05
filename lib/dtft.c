@@ -28,13 +28,20 @@ static void core1_dtft_worker(void) {
             float angle = 0.0f;
             
             int n = 0;
-            int N_unroll = core1_params.signal_len & ~3;
+            int N_unroll = core1_params.signal_len & ~7;
             
-            for (; n < N_unroll; n += 4) {
+            for (; n < N_unroll; n += 8) {
+                // Prefetch ahead to improve cache performance
+                __builtin_prefetch(&core1_params.signal[n + 16], 0, 3);
+                
                 float angle1 = angle;
                 float angle2 = angle + neg_omega;
                 float angle3 = angle + 2.0f * neg_omega;
                 float angle4 = angle + 3.0f * neg_omega;
+                float angle5 = angle + 4.0f * neg_omega;
+                float angle6 = angle + 5.0f * neg_omega;
+                float angle7 = angle + 6.0f * neg_omega;
+                float angle8 = angle + 7.0f * neg_omega;
                 
                 float cos1 = fast_cos(angle1);
                 float sin1 = fast_sin(angle1);
@@ -44,13 +51,25 @@ static void core1_dtft_worker(void) {
                 float sin3 = fast_sin(angle3);
                 float cos4 = fast_cos(angle4);
                 float sin4 = fast_sin(angle4);
+                float cos5 = fast_cos(angle5);
+                float sin5 = fast_sin(angle5);
+                float cos6 = fast_cos(angle6);
+                float sin6 = fast_sin(angle6);
+                float cos7 = fast_cos(angle7);
+                float sin7 = fast_sin(angle7);
+                float cos8 = fast_cos(angle8);
+                float sin8 = fast_sin(angle8);
                 
                 real_part += core1_params.signal[n]   * cos1 + core1_params.signal[n+1] * cos2 + 
-                             core1_params.signal[n+2] * cos3 + core1_params.signal[n+3] * cos4;
+                             core1_params.signal[n+2] * cos3 + core1_params.signal[n+3] * cos4 +
+                             core1_params.signal[n+4] * cos5 + core1_params.signal[n+5] * cos6 +
+                             core1_params.signal[n+6] * cos7 + core1_params.signal[n+7] * cos8;
                 imag_part += core1_params.signal[n]   * sin1 + core1_params.signal[n+1] * sin2 + 
-                             core1_params.signal[n+2] * sin3 + core1_params.signal[n+3] * sin4;
+                             core1_params.signal[n+2] * sin3 + core1_params.signal[n+3] * sin4 +
+                             core1_params.signal[n+4] * sin5 + core1_params.signal[n+5] * sin6 +
+                             core1_params.signal[n+6] * sin7 + core1_params.signal[n+7] * sin8;
                 
-                angle += 4.0f * neg_omega;
+                angle += 8.0f * neg_omega;
             }
             
             for (; n < core1_params.signal_len; n++) {
@@ -82,15 +101,22 @@ float compute_dtft_magnitude(uint8_t * restrict x, int N, float omega) {
     float angle = 0.0f;
     const float neg_omega = -omega;
     
-    // Loop unrolling (4x)
+    // Loop unrolling (8x)
     int n = 0;
-    int N_unroll = N & ~3;
+    int N_unroll = N & ~7;
     
-    for (; n < N_unroll; n += 4) {
+    for (; n < N_unroll; n += 8) {
+        // Prefetch ahead to improve cache performance
+        __builtin_prefetch(&x[n + 16], 0, 3);
+        
         float angle1 = angle;
         float angle2 = angle + neg_omega;
         float angle3 = angle + 2.0f * neg_omega;
         float angle4 = angle + 3.0f * neg_omega;
+        float angle5 = angle + 4.0f * neg_omega;
+        float angle6 = angle + 5.0f * neg_omega;
+        float angle7 = angle + 6.0f * neg_omega;
+        float angle8 = angle + 7.0f * neg_omega;
         
         float cos1 = fast_cos(angle1);
         float sin1 = fast_sin(angle1);
@@ -100,11 +126,21 @@ float compute_dtft_magnitude(uint8_t * restrict x, int N, float omega) {
         float sin3 = fast_sin(angle3);
         float cos4 = fast_cos(angle4);
         float sin4 = fast_sin(angle4);
+        float cos5 = fast_cos(angle5);
+        float sin5 = fast_sin(angle5);
+        float cos6 = fast_cos(angle6);
+        float sin6 = fast_sin(angle6);
+        float cos7 = fast_cos(angle7);
+        float sin7 = fast_sin(angle7);
+        float cos8 = fast_cos(angle8);
+        float sin8 = fast_sin(angle8);
         
-        real_part += x[n]   * cos1 + x[n+1] * cos2 + x[n+2] * cos3 + x[n+3] * cos4;
-        imag_part += x[n]   * sin1 + x[n+1] * sin2 + x[n+2] * sin3 + x[n+3] * sin4;
+        real_part += x[n]   * cos1 + x[n+1] * cos2 + x[n+2] * cos3 + x[n+3] * cos4 +
+                     x[n+4] * cos5 + x[n+5] * cos6 + x[n+6] * cos7 + x[n+7] * cos8;
+        imag_part += x[n]   * sin1 + x[n+1] * sin2 + x[n+2] * sin3 + x[n+3] * sin4 +
+                     x[n+4] * sin5 + x[n+5] * sin6 + x[n+6] * sin7 + x[n+7] * sin8;
         
-        angle += 4.0f * neg_omega;
+        angle += 8.0f * neg_omega;
     }
     
     // Handle remaining samples
@@ -161,16 +197,23 @@ float* calculate_dtft_complex(uint8_t * restrict x, int N, int num_points) {
         const float neg_omega = -omega;
         float angle = 0.0f;
         
-        // Main loop with manual unrolling (4x) for better ILP
+        // Main loop with manual unrolling (8x) for better ILP
         int n = 0;
-        int N_unroll = N & ~3;  // Round down to multiple of 4
+        int N_unroll = N & ~7;  // Round down to multiple of 8
         
-        for (; n < N_unroll; n += 4) {
-            // Process 4 samples at once
+        for (; n < N_unroll; n += 8) {
+            // Prefetch ahead to improve cache performance
+            __builtin_prefetch(&x[n + 16], 0, 3);
+            
+            // Process 8 samples at once
             float angle1 = angle;
             float angle2 = angle + neg_omega;
             float angle3 = angle + 2.0f * neg_omega;
             float angle4 = angle + 3.0f * neg_omega;
+            float angle5 = angle + 4.0f * neg_omega;
+            float angle6 = angle + 5.0f * neg_omega;
+            float angle7 = angle + 6.0f * neg_omega;
+            float angle8 = angle + 7.0f * neg_omega;
             
             float cos1 = fast_cos(angle1);
             float sin1 = fast_sin(angle1);
@@ -180,11 +223,21 @@ float* calculate_dtft_complex(uint8_t * restrict x, int N, int num_points) {
             float sin3 = fast_sin(angle3);
             float cos4 = fast_cos(angle4);
             float sin4 = fast_sin(angle4);
+            float cos5 = fast_cos(angle5);
+            float sin5 = fast_sin(angle5);
+            float cos6 = fast_cos(angle6);
+            float sin6 = fast_sin(angle6);
+            float cos7 = fast_cos(angle7);
+            float sin7 = fast_sin(angle7);
+            float cos8 = fast_cos(angle8);
+            float sin8 = fast_sin(angle8);
             
-            real_part += x[n]   * cos1 + x[n+1] * cos2 + x[n+2] * cos3 + x[n+3] * cos4;
-            imag_part += x[n]   * sin1 + x[n+1] * sin2 + x[n+2] * sin3 + x[n+3] * sin4;
+            real_part += x[n]   * cos1 + x[n+1] * cos2 + x[n+2] * cos3 + x[n+3] * cos4 +
+                         x[n+4] * cos5 + x[n+5] * cos6 + x[n+6] * cos7 + x[n+7] * cos8;
+            imag_part += x[n]   * sin1 + x[n+1] * sin2 + x[n+2] * sin3 + x[n+3] * sin4 +
+                         x[n+4] * sin5 + x[n+5] * sin6 + x[n+6] * sin7 + x[n+7] * sin8;
             
-            angle += 4.0f * neg_omega;
+            angle += 8.0f * neg_omega;
         }
         
         // Handle remaining samples
