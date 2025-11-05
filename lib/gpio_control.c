@@ -30,9 +30,16 @@ void init_signal_gpio(void) {
     gpio_set_dir(SIGNAL_GPIO, GPIO_OUT);
     gpio_put(SIGNAL_GPIO, 0);
     
+    // Receiver as input
     gpio_init(RECEIVER_GPIO);
-    gpio_set_dir(RECEIVER_GPIO, GPIO_OUT);
-    gpio_put(RECEIVER_GPIO, 0);
+    gpio_set_dir(RECEIVER_GPIO, GPIO_IN);
+    // Optional pull-down to define idle state
+    gpio_pull_down(RECEIVER_GPIO);
+    
+    // Clock as output on GPIO4
+    gpio_init(CLOCK_GPIO);
+    gpio_set_dir(CLOCK_GPIO, GPIO_OUT);
+    gpio_put(CLOCK_GPIO, 0);
     
     gpio_init(TX_ACTIVE_GPIO);
     gpio_set_dir(TX_ACTIVE_GPIO, GPIO_OUT);
@@ -44,12 +51,12 @@ void send_bit(uint8_t bit) {
     gpio_put(SIGNAL_GPIO, bit);
     
     // Clock pulse: high for half the bit time
-    gpio_put(RECEIVER_GPIO, 1);
+    gpio_put(CLOCK_GPIO, 1);
     pico_set_led(true);
     sleep_ms(BIT_DELAY_MS / 2);
     
     // Clock pulse: low for the other half
-    gpio_put(RECEIVER_GPIO, 0);
+    gpio_put(CLOCK_GPIO, 0);
     pico_set_led(false);
     sleep_ms(BIT_DELAY_MS / 2);
 }
@@ -90,4 +97,69 @@ uint8_t* send_data(uint16_t data, uint8_t num_bits) {
     gpio_put(TX_ACTIVE_GPIO, 0);
 
     return bits_sent;
+}
+
+uint8_t* send_receive_data(uint16_t data, uint8_t num_bits) {
+    if (num_bits < 1 || num_bits > 16) {
+        printf("Error: num_bits must be between 1 and 16\n");
+        return NULL;
+    }
+
+    // Allocate array: first element stores num_bits, rest store the received bits
+    uint8_t *bits_recv = malloc((num_bits + 1) * sizeof(uint8_t));
+    if (!bits_recv) return NULL;
+    bits_recv[0] = num_bits;
+
+#ifdef DEBUG
+    printf("Send pattern (TX): ");
+    for (int i = num_bits - 1; i >= 0; i--) {
+        printf("%d", (data >> i) & 1);
+    }
+    printf("\n");
+#endif
+
+    // Ensure known idle states
+    gpio_put(SIGNAL_GPIO, 0);
+    gpio_put(CLOCK_GPIO, 0);
+    sleep_ms(1);
+
+    // Transmission start
+    gpio_put(TX_ACTIVE_GPIO, 1);
+
+    for (int i = num_bits - 1; i >= 0; i--) {
+        uint8_t tx_bit = (data >> i) & 1;
+
+        // Drive data bit stable before clock edge
+        gpio_put(SIGNAL_GPIO, tx_bit);
+
+        // Rising edge of clock
+        gpio_put(CLOCK_GPIO, 1);
+        pico_set_led(true);
+
+        // Allow setup time before sampling
+        sleep_ms(BIT_DELAY_MS / 4);
+
+        // Sample receiver on GPIO3
+        uint8_t rx_bit = gpio_get(RECEIVER_GPIO) & 1;
+        bits_recv[num_bits - i] = rx_bit;
+
+        // Hold clock high for remaining half-bit
+        sleep_ms(BIT_DELAY_MS / 4);
+
+        // Falling edge of clock
+        gpio_put(CLOCK_GPIO, 0);
+        pico_set_led(false);
+
+        // Low period
+        sleep_ms(BIT_DELAY_MS / 2);
+    }
+
+    // Reset lines
+    gpio_put(SIGNAL_GPIO, 0);
+    sleep_ms(10);
+
+    // Transmission end
+    gpio_put(TX_ACTIVE_GPIO, 0);
+
+    return bits_recv;
 }

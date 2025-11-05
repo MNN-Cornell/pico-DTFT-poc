@@ -39,10 +39,11 @@ int main() {
 
         // Pattern 3: 8 bits
         printf("\nPattern 3 (8 bits):\n");
-        uint8_t *bits_sent = send_data(0b01001100, 8); // 8 bits: impulse (single 1). radians/sample = 2*pi/8
-        if (bits_sent) {
-            process_pattern(bits_sent);
-            free(bits_sent);
+        // Transmit on GPIO2, clock on GPIO4, sample received bits on GPIO3
+        uint8_t *bits_recv = send_receive_data(0b01001100, 8);
+        if (bits_recv) {
+            process_pattern(bits_recv);
+            free(bits_recv);
         }
         
         // Wait before starting the sequence again
