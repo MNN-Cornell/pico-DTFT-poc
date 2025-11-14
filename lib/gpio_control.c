@@ -132,6 +132,9 @@ uint8_t* send_receive_data(uint16_t data, uint8_t num_bits, uint8_t sample_divis
     // Transmission start
     gpio_put(TX_ACTIVE_GPIO, 1);
 
+    // Track last sampled bit for sample-and-hold
+    uint8_t last_sampled_bit = 0;
+
     for (int i = num_bits - 1; i >= 0; i--) {
         uint8_t tx_bit = (data >> i) & 1;
         int bit_position = num_bits - 1 - i;  // 0-indexed position from MSB
@@ -151,9 +154,10 @@ uint8_t* send_receive_data(uint16_t data, uint8_t num_bits, uint8_t sample_divis
         if (bit_position % sample_divisor == 0) {
             // Sample this bit
             rx_bit = gpio_get(RECEIVER_GPIO) & 1;
+            last_sampled_bit = rx_bit;  // Update last sampled value
         } else {
-            // Don't sample - set to 0 (undersampled position)
-            rx_bit = 0;
+            // Don't sample - hold the last sampled value
+            rx_bit = last_sampled_bit;
         }
         bits_recv[num_bits - i] = rx_bit;
 
