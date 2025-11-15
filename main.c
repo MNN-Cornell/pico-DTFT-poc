@@ -34,7 +34,7 @@
 // 2 = Half rate (sample every 2nd bit = 4 bits)
 // 4 = Quarter rate (sample every 4th bit = 2 bits)
 // 8 = Eighth rate (sample every 8th bit = 1 bit)
-#define SAMPLING_RATE_DIVISOR 8
+#define SAMPLING_RATE_DIVISOR 4
 
 // Array to store reconstructed image pixels (only used if PC_RECONSTRUCTION = 0)
 #if !PC_RECONSTRUCTION
@@ -52,6 +52,34 @@ uint8_t process_pixel(uint8_t pixel_value) {
     uint8_t reconstructed = 0;
     
     if (bits_recv) {
+        // XOR the actually sampled bits (real-time detection)
+        // bits_recv[0] = num_bits (8), bits_recv[1..8] = actual bit values
+        // We sample at positions: 0, DIVISOR, 2*DIVISOR, ...
+        uint8_t static_ref_parity = 0;
+        
+        switch (SAMPLING_RATE_DIVISOR) {
+            case 1:  // Full rate: sample all 8 bits
+                static_ref_parity = bits_recv[1] ^ bits_recv[2] ^ bits_recv[3] ^ bits_recv[4] ^
+                                   bits_recv[5] ^ bits_recv[6] ^ bits_recv[7] ^ bits_recv[8];
+                break;
+            case 2:  // Half rate: sample 4 bits (positions 0, 2, 4, 6)
+                static_ref_parity = bits_recv[1] ^ bits_recv[3] ^ bits_recv[5] ^ bits_recv[7];
+                break;
+            case 4:  // Quarter rate: sample 2 bits (positions 0, 4)
+                static_ref_parity = bits_recv[1] ^ bits_recv[5];
+                break;
+            case 8:  // Eighth rate: sample 1 bit (position 0)
+                static_ref_parity = bits_recv[1];
+                break;
+            default:
+                printf("Warning: Unsupported SAMPLING_RATE_DIVISOR: %d\n", SAMPLING_RATE_DIVISOR);
+                break;
+        }
+        
+        // static_ref_parity = 1 if odd number of 1's in sampled bits
+        // static_ref_parity = 0 if even number of 1's in sampled bits
+        printf("XOR of sampled bits: %d\n", static_ref_parity);
+        
         // Process pattern and get reconstructed value
         reconstructed = process_pattern_return_value(bits_recv);
         free(bits_recv);
@@ -92,29 +120,22 @@ void transmit_reconstruct_image(void) {
 #endif
         
         // Transmit and get spectrum or reconstruct
-        uint8_t *bits_recv = send_receive_data(original, 8, SAMPLING_RATE_DIVISOR);
+        // Use process_pixel which includes XOR logic
+        uint8_t reconstructed = process_pixel(original);
         
-        if (bits_recv) {
-#if PC_RECONSTRUCTION
-            // Output DTFT spectrum for PC-side reconstruction
-            process_pattern_output_spectrum(bits_recv, i, x, y);
-#else
-            // Reconstruct on Pico
-            uint8_t reconstructed = process_pattern_return_value(bits_recv);
-            reconstructed_image[i] = reconstructed;
+#if !PC_RECONSTRUCTION
+        reconstructed_image[i] = reconstructed;
             
 #if VERBOSE_OUTPUT
-            // Print reconstruction result
-            printf("  RECONSTRUCTED: 0x%02X (0b", reconstructed);
-            for (int b = 7; b >= 0; b--) {
-                printf("%d", (reconstructed >> b) & 1);
-            }
-            printf(", decimal: %d) %s\n", reconstructed,
-                   (original == reconstructed) ? "✓ MATCH" : "✗ MISMATCH");
-#endif
-#endif
-            free(bits_recv);
+        // Print reconstruction result
+        printf("  RECONSTRUCTED: 0x%02X (0b", reconstructed);
+        for (int b = 7; b >= 0; b--) {
+            printf("%d", (reconstructed >> b) & 1);
         }
+        printf(", decimal: %d) %s\n", reconstructed,
+               (original == reconstructed) ? "✓ MATCH" : "✗ MISMATCH");
+#endif
+#endif
         
         // Progress update every 10%
         int progress_interval = PIXELS_TO_TRANSMIT / 10;
@@ -194,17 +215,15 @@ void test_pattern(uint8_t pattern) {
     }
     printf(", decimal: %d)\n", pattern);
     
-    // Transmit on GPIO2, clock on GPIO4, sample received bits on GPIO3
-    uint8_t *bits_recv = send_receive_data(pattern, 8, SAMPLING_RATE_DIVISOR);
-    if (bits_recv) {
-        printf("Received bits: ");
-        for (int i = 1; i <= bits_recv[0]; i++) {
-            printf("%d", bits_recv[i]);
-        }
-        printf("\n");
-        process_pattern(bits_recv);
-        free(bits_recv);
+    // Use process_pixel which includes XOR logic
+    uint8_t reconstructed = process_pixel(pattern);
+    
+    printf("Reconstructed: 0x%02X (0b", reconstructed);
+    for (int i = 7; i >= 0; i--) {
+        printf("%d", (reconstructed >> i) & 1);
     }
+    printf(", decimal: %d) %s\n", reconstructed,
+           (pattern == reconstructed) ? "✓ MATCH" : "✗ MISMATCH");
 }
 
 
@@ -229,7 +248,7 @@ int main() {
     init_signal_gpio();
     
     // Choose mode: 0 = single pattern test, 1 = image transmission
-    int mode = 1;  // Change to 0 for single pattern testing
+    int mode = 0;  // Change to 0 for single pattern testing
     
     if (mode == 0) {
         // Single pattern testing mode
@@ -238,14 +257,14 @@ int main() {
             
             // Test different patterns - just change the values here!
             // test_pattern(0x4C);   // 0b01001100
-            test_pattern(0x4F);   // 0b01001111
+            // test_pattern(0x4F);   // 0b01001111
             
             // Uncomment to test more patterns:
             // test_pattern(0xAA);   // 0b10101010
             // test_pattern(0x55);   // 0b01010101
             // test_pattern(0xFF);   // 0b11111111
             // test_pattern(0x00);   // 0b00000000
-            // test_pattern(0x0F);   // 0b00001111
+            test_pattern(0x0F);   // 0b00001111
             // test_pattern(0xF0);   // 0b11110000
             
             // Wait before starting the sequence again
